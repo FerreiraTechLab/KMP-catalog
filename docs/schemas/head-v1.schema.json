@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ferreiratechlab.github.io/KMP-catalog/schemas/head-v1.schema.json",
+  "title": "KMP Signed Head v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sequence", "catalogSize", "catalogSha256",
+               "catalogMagnet", "catalogSignature", "publishedAt", "expiresAt"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "sequence": {"type": "integer", "minimum": 1},
+    "catalogSize": {"type": "integer", "minimum": 1, "maximum": 8388608},
+    "catalogSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "catalogMagnet": {"type": "string", "pattern": "^magnet:\\?xt=urn:btih:"},
+    "catalogSignature": {"type": "string", "contentEncoding": "base64"},
+    "catalogTorrent": {"type": "string", "contentEncoding": "base64"},
+    "publishedAt": {"type": "string", "format": "date-time"},
+    "expiresAt": {"type": "string", "format": "date-time"},
+    "nextKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["effectiveAfterSequence", "publicKey", "sha256"],
+      "properties": {
+        "effectiveAfterSequence": {"type": "integer", "minimum": 1},
+        "publicKey": {"type": "string", "contentEncoding": "base64"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    }
+  }
+}
