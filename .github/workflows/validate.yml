@@ -13,5 +13,10 @@ jobs:
         with:
           python-version: "3.13"
       - run: pip install check-jsonschema==0.33.3
-      - run: check-jsonschema --schemafile docs/schemas/catalog-v2.schema.json docs/snapshots/catalog-*.json
+      - name: Validate each snapshot with its declared schema
+        run: |
+          for snapshot in docs/snapshots/catalog-*.json; do
+            version=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["schemaVersion"])' "$snapshot")
+            check-jsonschema --schemafile "docs/schemas/catalog-v${version}.schema.json" "$snapshot"
+          done
       - run: check-jsonschema --schemafile docs/schemas/head-v1.schema.json docs/head.json

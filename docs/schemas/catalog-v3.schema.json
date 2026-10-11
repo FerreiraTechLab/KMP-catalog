@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ferreiratechlab.github.io/KMP-catalog/schemas/catalog-v3.schema.json",
+  "title": "KMP Catalog Snapshot v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sequence", "generatedAt", "items", "revocations"],
+  "properties": {
+    "schemaVersion": {"const": 3},
+    "sequence": {"type": "integer", "minimum": 1},
+    "generatedAt": {"type": "string", "format": "date-time"},
+    "items": {"type": "array", "items": {"$ref": "#/$defs/item"}},
+    "revocations": {"type": "array", "items": {"$ref": "#/$defs/revocation"}},
+    "extensions": {"$ref": "#/$defs/extensions"}
+  },
+  "$defs": {
+    "safeId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "infoHash": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "httpsUrl": {"type": "string", "format": "uri", "pattern": "^https://"},
+    "safePath": {
+      "type": "string", "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(/|$))(?!.*//)(?!.*[:\\\\])[ -~]+$"
+    },
+    "person": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "url"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 120},
+        "url": {"$ref": "#/$defs/httpsUrl"}
+      }
+    },
+    "item": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "description", "homepage", "source", "license", "porter", "redistribution", "release"],
+      "properties": {
+        "id": {"$ref": "#/$defs/safeId"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 120},
+        "description": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "homepage": {"$ref": "#/$defs/httpsUrl"},
+        "source": {"$ref": "#/$defs/httpsUrl"},
+        "license": {"type": "string", "minLength": 1, "maxLength": 300, "pattern": "^[A-Za-z0-9.+() -]+$"},
+        "porter": {"$ref": "#/$defs/person"},
+        "redistribution": {
+          "type": "object", "additionalProperties": false,
+          "required": ["evidence"],
+          "properties": {
+            "evidence": {"$ref": "#/$defs/httpsUrl"},
+            "notes": {"type": "string", "maxLength": 2000}
+          }
+        },
+        "release": {"$ref": "#/$defs/release"},
+        "localizations": {
+          "type": "object",
+          "patternProperties": {
+            "^[a-z]{2,3}(?:-[A-Z]{2})?$": {
+              "type": "object", "additionalProperties": false,
+              "properties": {
+                "name": {"type": "string", "minLength": 1, "maxLength": 120},
+                "description": {"type": "string", "minLength": 1, "maxLength": 2000}
+              },
+              "minProperties": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "extensions": {"$ref": "#/$defs/extensions"}
+      }
+    },
+    "release": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "revision", "channel", "publishedAt", "notes", "review", "variants"],
+      "properties": {
+        "version": {"type": "string", "minLength": 1, "maxLength": 80},
+        "revision": {"type": "integer", "minimum": 1},
+        "channel": {"enum": ["stable", "beta"]},
+        "publishedAt": {"type": "string", "format": "date-time"},
+        "notes": {"type": "string", "maxLength": 8000},
+        "review": {"$ref": "#/$defs/review"},
+        "variants": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/variant"}}
+      }
+    },
+    "review": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "decisionId", "reviewedAt", "reviewer", "checks"],
+      "properties": {
+        "status": {"const": "approved"},
+        "decisionId": {"type": "string", "pattern": "^[A-Za-z0-9._/-]+$"},
+        "reviewedAt": {"type": "string", "format": "date-time"},
+        "reviewer": {"$ref": "#/$defs/person"},
+        "checks": {
+          "type": "array", "minItems": 4, "uniqueItems": true,
+          "items": {"enum": ["zip-layout", "hash", "launcher", "license", "malware-scan", "manual-run"]},
+          "allOf": [
+            {"contains": {"const": "zip-layout"}},
+            {"contains": {"const": "hash"}},
+            {"contains": {"const": "launcher"}},
+            {"contains": {"const": "license"}}
+          ]
+        },
+        "notes": {"type": "string", "maxLength": 4000}
+      }
+    },
+    "variant": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "priority", "requiredCapabilities", "compatibility", "requirements", "download", "install"],
+      "properties": {
+        "id": {"$ref": "#/$defs/safeId"},
+        "priority": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "requiredCapabilities": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/capability"}},
+        "compatibility": {"$ref": "#/$defs/compatibility"},
+        "requirements": {"$ref": "#/$defs/requirements"},
+        "download": {"$ref": "#/$defs/download"},
+        "install": {"$ref": "#/$defs/install"},
+        "extensions": {"$ref": "#/$defs/extensions"}
+      }
+    },
+    "compatibility": {
+      "type": "object", "additionalProperties": false,
+      "required": ["architectures"],
+      "properties": {
+        "architectures": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["aarch64", "armhf", "x86_64"]}},
+        "firmwares": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "include": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/safeId"}},
+            "exclude": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/safeId"}}
+          }
+        }
+      }
+    },
+    "requirements": {
+      "type": "object", "additionalProperties": false,
+      "required": ["readyToRun", "analogSticks", "renderers", "runtimes"],
+      "properties": {
+        "readyToRun": {"type": "boolean"},
+        "instructions": {"type": "string", "maxLength": 4000},
+        "minimumRamMB": {"type": "integer", "minimum": 1},
+        "analogSticks": {"type": "integer", "minimum": 0, "maximum": 2},
+        "renderers": {"type": "array", "uniqueItems": true, "items": {"enum": ["gles2", "gles3", "opengl", "vulkan"]}},
+        "runtimes": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/safeId"}}
+      }
+    },
+    "download": {
+      "type": "object", "additionalProperties": false,
+      "required": ["packageFile", "sizeBytes", "sha256", "infoHash", "magnet", "torrent"],
+      "properties": {
+        "packageFile": {"type": "string", "pattern": "^[^/\\\\:]+\\.[zZ][iI][pP]$"},
+        "sizeBytes": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "infoHash": {"$ref": "#/$defs/infoHash"},
+        "magnet": {"type": "string", "pattern": "^magnet:\\?xt=urn:btih:"},
+        "torrent": {"type": "string", "contentEncoding": "base64", "maxLength": 90000}
+      }
+    },
+    "install": {
+      "type": "object", "additionalProperties": false,
+      "required": ["portId", "paths", "userDataPaths"],
+      "properties": {
+        "portId": {"$ref": "#/$defs/safeId"},
+        "paths": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/safePath"}},
+        "userDataPaths": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/safePath"}}
+      }
+    },
+    "revocation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["packageSha256", "action", "reason", "publishedAt"],
+      "properties": {
+        "packageSha256": {"$ref": "#/$defs/sha256"},
+        "action": {"enum": ["warn", "block-install"]},
+        "reason": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "publishedAt": {"type": "string", "format": "date-time"},
+        "advisory": {"$ref": "#/$defs/httpsUrl"}
+      }
+    },
+    "capability": {"type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9-]+)+$"},
+    "extensions": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z0-9]+(?:[.-][a-z0-9-]+)+$"}
+    }
+  }
+}
