@@ -1,12 +1,16 @@
 name: Publish signed catalog
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "submissions/**"
   workflow_dispatch:
     inputs:
       sequence:
-        description: Catalog sequence to sign
-        required: true
-        default: "9"
+        description: Existing sequence to sign; leave empty to promote merged submissions
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -17,7 +21,21 @@ jobs:
     environment: catalog-production
     steps:
       - uses: actions/checkout@v4
+      - name: Promote merged submissions
+        id: promote
+        if: github.event_name == 'push' || inputs.sequence == ''
+        run: python3 tools/promote-submissions.py --output "$GITHUB_OUTPUT"
+      - name: Select sequence
+        id: release
+        env:
+          REQUESTED_SEQUENCE: ${{ inputs.sequence }}
+          PROMOTED_SEQUENCE: ${{ steps.promote.outputs.sequence }}
+        run: |
+          sequence="${REQUESTED_SEQUENCE:-$PROMOTED_SEQUENCE}"
+          test -n "$sequence" || { echo "Nenhuma submissão pendente."; exit 0; }
+          echo "sequence=$sequence" >> "$GITHUB_OUTPUT"
       - name: Materialize protected signing key
+        if: steps.release.outputs.sequence != ''
         env:
           SIGNING_KEY: ${{ secrets.CATALOG_SIGNING_KEY }}
           SIGNING_PASSPHRASE: ${{ secrets.CATALOG_SIGNING_PASSPHRASE }}
@@ -28,14 +46,16 @@ jobs:
           printf '%s\n' "$SIGNING_KEY" > "$RUNNER_TEMP/catalog-key.pem"
           printf '%s' "$SIGNING_PASSPHRASE" > "$RUNNER_TEMP/catalog-passphrase"
       - name: Verify signing identity
+        if: steps.release.outputs.sequence != ''
         run: |
           openssl pkey -in "$RUNNER_TEMP/catalog-key.pem" \
             -passin "file:$RUNNER_TEMP/catalog-passphrase" -pubout \
             -out "$RUNNER_TEMP/catalog-root.pub"
           cmp "$RUNNER_TEMP/catalog-root.pub" schemas/catalog-root.pub
       - name: Sign snapshot and head
+        if: steps.release.outputs.sequence != ''
         env:
-          SEQUENCE: ${{ inputs.sequence }}
+          SEQUENCE: ${{ steps.release.outputs.sequence }}
         run: |
           number=$(printf '%08d' "$SEQUENCE")
           snapshot="docs/snapshots/catalog-$number.json"
@@ -50,11 +70,12 @@ jobs:
           cp "$RUNNER_TEMP/signed/head.json" docs/head.json
           cp "$RUNNER_TEMP/signed/head.json.sig" docs/head.json.sig
       - name: Commit signed publication
+        if: steps.release.outputs.sequence != ''
         env:
-          SEQUENCE: ${{ inputs.sequence }}
+          SEQUENCE: ${{ steps.release.outputs.sequence }}
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add docs/head.json docs/head.json.sig docs/snapshots/
+          git add -A docs/ submissions/ reviews/
           git commit -m "Publish signed catalog sequence $SEQUENCE"
           git push
