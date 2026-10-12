@@ -1,0 +1,60 @@
+name: Publish signed catalog
+
+on:
+  workflow_dispatch:
+    inputs:
+      sequence:
+        description: Catalog sequence to sign
+        required: true
+        default: "9"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: catalog-production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Materialize protected signing key
+        env:
+          SIGNING_KEY: ${{ secrets.CATALOG_SIGNING_KEY }}
+          SIGNING_PASSPHRASE: ${{ secrets.CATALOG_SIGNING_PASSPHRASE }}
+        run: |
+          test -n "$SIGNING_KEY"
+          test -n "$SIGNING_PASSPHRASE"
+          umask 077
+          printf '%s\n' "$SIGNING_KEY" > "$RUNNER_TEMP/catalog-key.pem"
+          printf '%s' "$SIGNING_PASSPHRASE" > "$RUNNER_TEMP/catalog-passphrase"
+      - name: Verify signing identity
+        run: |
+          openssl pkey -in "$RUNNER_TEMP/catalog-key.pem" \
+            -passin "file:$RUNNER_TEMP/catalog-passphrase" -pubout \
+            -out "$RUNNER_TEMP/catalog-root.pub"
+          cmp "$RUNNER_TEMP/catalog-root.pub" schemas/catalog-root.pub
+      - name: Sign snapshot and head
+        env:
+          SEQUENCE: ${{ inputs.sequence }}
+        run: |
+          number=$(printf '%08d' "$SEQUENCE")
+          snapshot="docs/snapshots/catalog-$number.json"
+          torrent="docs/snapshots/catalog-$number.torrent"
+          magnet=$(cat "docs/snapshots/catalog-$number.magnet")
+          python3 tools/catalog-release.py "$snapshot" \
+            --private-key "$RUNNER_TEMP/catalog-key.pem" \
+            --passphrase-file "$RUNNER_TEMP/catalog-passphrase" \
+            --torrent "$torrent" --magnet "$magnet" \
+            --output "$RUNNER_TEMP/signed"
+          cp "$RUNNER_TEMP/signed/catalog-$number.json.sig" "docs/snapshots/catalog-$number.json.sig"
+          cp "$RUNNER_TEMP/signed/head.json" docs/head.json
+          cp "$RUNNER_TEMP/signed/head.json.sig" docs/head.json.sig
+      - name: Commit signed publication
+        env:
+          SEQUENCE: ${{ inputs.sequence }}
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add docs/head.json docs/head.json.sig docs/snapshots/
+          git commit -m "Publish signed catalog sequence $SEQUENCE"
+          git push
