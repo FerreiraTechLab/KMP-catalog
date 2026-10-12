@@ -9,6 +9,9 @@ from pathlib import Path
 import shutil
 from urllib.parse import quote
 
+TRACKERS = ["udp://tracker.opentrackr.org:1337/announce", "udp://open.stealth.si:80/announce"]
+PIECE_LENGTH = 256 * 1024
+
 
 def decode(data, offset=0):
     marker = data[offset:offset + 1]
@@ -57,6 +60,23 @@ def torrent_metadata(torrent_path):
     parts += [f"tr={quote(item, safe='')}" for item in trackers]
     parts += [f"ws={quote(item, safe='')}" for item in webseeds]
     return info_hash, "magnet:?" + "&".join(parts), base64.b64encode(payload).decode("ascii")
+
+
+def create_catalog_torrent(snapshot_path):
+    raw = snapshot_path.read_bytes()
+    pieces = b"".join(hashlib.sha1(raw[offset:offset + PIECE_LENGTH]).digest()
+        for offset in range(0, len(raw), PIECE_LENGTH))
+    name = snapshot_path.name
+    webseeds = [f"https://ferreiratechlab.github.io/KMP-catalog/snapshots/{name}",
+        f"https://raw.githubusercontent.com/FerreiraTechLab/KMP-catalog/main/docs/snapshots/{name}"]
+    document = {b"announce": TRACKERS[0].encode(),
+        b"announce-list": [[tracker.encode()] for tracker in TRACKERS],
+        b"info": {b"length": len(raw), b"name": name.encode(), b"piece length": PIECE_LENGTH,
+            b"pieces": pieces}, b"url-list": [item.encode() for item in webseeds]}
+    torrent_path = snapshot_path.with_suffix(".torrent")
+    torrent_path.write_bytes(encode(document))
+    _, magnet, _ = torrent_metadata(torrent_path)
+    snapshot_path.with_suffix(".magnet").write_text(magnet + "\n")
 
 
 def published_releases(snapshot_directory):
@@ -147,6 +167,7 @@ def main():
     catalog["items"] = sorted(by_id.values(), key=lambda item: item["id"])
     target = snapshots / f"catalog-{sequence:08d}.json"
     target.write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + "\n")
+    create_catalog_torrent(target)
     stream = args.output.open("a") if args.output else __import__("sys").stdout
     print(f"sequence={sequence}", file=stream)
     if args.output: stream.close()
