@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ferreiratechlab.github.io/KMP-catalog/schemas/publisher-submission-v1.schema.json",
+  "title": "KMP Publisher Submission v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "project", "submitter", "release"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "project": {"$ref": "#/$defs/project"},
+    "submitter": {"$ref": "#/$defs/person"},
+    "release": {"$ref": "#/$defs/submittedRelease"},
+    "extensions": {"$ref": "#/$defs/extensions"}
+  },
+  "$defs": {
+    "safeId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "httpsUrl": {"type": "string", "format": "uri", "pattern": "^https://"},
+    "safePath": {
+      "type": "string", "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(/|$))(?!.*//)(?!.*[:\\\\])[ -~]+$"
+    },
+    "person": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "url"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 120},
+        "url": {"$ref": "#/$defs/httpsUrl"}
+      }
+    },
+    "project": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "description", "homepage", "source", "license", "porter", "redistribution"],
+      "properties": {
+        "id": {"$ref": "#/$defs/safeId"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 120},
+        "description": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "homepage": {"$ref": "#/$defs/httpsUrl"},
+        "source": {"$ref": "#/$defs/httpsUrl"},
+        "license": {"type": "string", "minLength": 1, "maxLength": 300, "pattern": "^[A-Za-z0-9.+() -]+$"},
+        "porter": {"$ref": "#/$defs/person"},
+        "redistribution": {
+          "type": "object", "additionalProperties": false,
+          "required": ["allowed", "evidence"],
+          "properties": {
+            "allowed": {"const": true},
+            "evidence": {"$ref": "#/$defs/httpsUrl"},
+            "notes": {"type": "string", "maxLength": 2000}
+          }
+        }
+      }
+    },
+    "submittedRelease": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "revision", "channel", "publishedAt", "notes", "variants"],
+      "properties": {
+        "version": {"type": "string", "minLength": 1, "maxLength": 80},
+        "revision": {"type": "integer", "minimum": 1},
+        "channel": {"enum": ["stable", "beta"]},
+        "publishedAt": {"type": "string", "format": "date-time"},
+        "notes": {"type": "string", "maxLength": 8000},
+        "variants": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/submittedVariant"}}
+      }
+    },
+    "submittedVariant": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "priority", "requiredCapabilities", "compatibility", "requirements", "package", "install", "checks"],
+      "properties": {
+        "id": {"$ref": "#/$defs/safeId"},
+        "priority": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "requiredCapabilities": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/capability"}},
+        "compatibility": {"$ref": "#/$defs/compatibility"},
+        "requirements": {"$ref": "#/$defs/requirements"},
+        "package": {
+          "type": "object", "additionalProperties": false,
+          "required": ["path", "sizeBytes", "sha256"],
+          "properties": {
+            "path": {"$ref": "#/$defs/safePath"},
+            "sizeBytes": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+            "sha256": {"$ref": "#/$defs/sha256"}
+          }
+        },
+        "install": {"$ref": "#/$defs/install"},
+        "checks": {
+          "type": "array", "uniqueItems": true,
+          "items": {"enum": ["zip-layout", "hash", "launcher", "license", "local-run"]}
+        }
+      }
+    },
+    "compatibility": {
+      "type": "object", "additionalProperties": false,
+      "required": ["architectures"],
+      "properties": {
+        "architectures": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["aarch64", "armhf", "x86_64"]}},
+        "firmwares": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "include": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/safeId"}},
+            "exclude": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/safeId"}}
+          }
+        }
+      }
+    },
+    "requirements": {
+      "type": "object", "additionalProperties": false,
+      "required": ["readyToRun", "analogSticks", "renderers", "runtimes"],
+      "properties": {
+        "readyToRun": {"type": "boolean"},
+        "instructions": {"type": "string", "maxLength": 4000},
+        "minimumRamMB": {"type": "integer", "minimum": 1},
+        "analogSticks": {"type": "integer", "minimum": 0, "maximum": 2},
+        "renderers": {"type": "array", "uniqueItems": true, "items": {"enum": ["gles2", "gles3", "opengl", "vulkan"]}},
+        "runtimes": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/safeId"}}
+      }
+    },
+    "install": {
+      "type": "object", "additionalProperties": false,
+      "required": ["portId", "paths", "userDataPaths"],
+      "properties": {
+        "portId": {"$ref": "#/$defs/safeId"},
+        "paths": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/safePath"}},
+        "userDataPaths": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/safePath"}}
+      }
+    },
+    "extensions": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z0-9]+(?:[.-][a-z0-9-]+)+$"}
+    },
+    "capability": {"type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9-]+)+$"}
+  }
+}

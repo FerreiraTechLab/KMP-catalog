@@ -20,3 +20,11 @@ jobs:
             check-jsonschema --schemafile "docs/schemas/catalog-v${version}.schema.json" "$snapshot"
           done
       - run: check-jsonschema --schemafile docs/schemas/head-v1.schema.json docs/head.json
+      - name: Validate Publisher submissions
+        run: |
+          shopt -s nullglob globstar
+          submissions=(submissions/**/submission.json)
+          if ((${#submissions[@]})); then
+            check-jsonschema --schemafile schemas/publisher-submission-v1.schema.json "${submissions[@]}"
+            python3 tools/validate-submissions.py "${submissions[@]}"
+          fi
