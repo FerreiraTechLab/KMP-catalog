@@ -205,6 +205,10 @@ def validate(submission_path, fetch_missing=False, download_timeout=600, stall_t
                 if name == package_name and length == spec["sizeBytes"]: matches.append(torrent)
             except (ValueError, KeyError, UnicodeDecodeError): pass
         if len(matches) != 1: raise ValueError(f"esperado um torrent correspondente para {package_name}")
+        # O catálogo assinado embute o torrent e os clientes recusam os maiores que 64 KiB.
+        if matches[0].stat().st_size > 64 * 1024:
+            raise ValueError(f"torrent de {matches[0].stat().st_size} bytes excede o limite de 64 KiB do catálogo; "
+                "gere-o de novo com peças maiores (KMP Publisher 0.3.7 ou posterior)")
         temporary = None
         if not package_path.is_file():
             if not fetch_missing: raise ValueError("pacote ausente; use --fetch-missing para obtê-lo pelo swarm")
