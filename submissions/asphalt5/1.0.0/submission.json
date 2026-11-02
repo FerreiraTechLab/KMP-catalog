@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "id": "asphalt5",
+    "name": "Asphalt 5",
+    "description": "Asphalt 5 é um videogame de corrida de 2009 desenvolvido e publicado pela Gameloft e é o quinto jogo principal da série Asphalt",
+    "homepage": "https://ferreiratechlaboficial.web.app/",
+    "source": "https://ferreiratechlaboficial.web.app/",
+    "license": "MIT",
+    "porter": {
+      "name": "LUCAS",
+      "url": "https://ferreiratechlaboficial.web.app/"
+    },
+    "redistribution": {
+      "allowed": true,
+      "evidence": "https://ferreiratechlaboficial.web.app/"
+    }
+  },
+  "submitter": {
+    "name": "LUCAS",
+    "url": "https://ferreiratechlaboficial.web.app/"
+  },
+  "release": {
+    "version": "1.0.0",
+    "revision": 1,
+    "channel": "stable",
+    "publishedAt": "2026-11-02T03:18:41.311Z",
+    "notes": "",
+    "variants": [
+      {
+        "id": "aarch64-portmaster",
+        "priority": 100,
+        "requiredCapabilities": [],
+        "compatibility": {
+          "architectures": [
+            "aarch64"
+          ],
+          "firmwares": {
+            "include": [
+              "darkos",
+              "rocknix",
+              "aurknix"
+            ]
+          }
+        },
+        "requirements": {
+          "readyToRun": true,
+          "minimumRamMB": 128,
+          "analogSticks": 0,
+          "renderers": [],
+          "runtimes": []
+        },
+        "package": {
+          "path": "packages/asphalt5.zip",
+          "sizeBytes": 113174242,
+          "sha256": "9826c8cfa0486fb32fe36016bc188062e663136c739a3a40cb82fe90bbd167d0"
+        },
+        "install": {
+          "portId": "asphalt5",
+          "paths": [
+            "asphalt5/",
+            "Asphalt 5.sh"
+          ],
+          "userDataPaths": []
+        },
+        "checks": [
+          "hash",
+          "zip-layout",
+          "launcher",
+          "license"
+        ]
+      }
+    ]
+  }
+}
