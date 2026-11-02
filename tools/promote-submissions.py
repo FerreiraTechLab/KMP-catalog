@@ -8,7 +8,9 @@ import json
 from pathlib import Path
 import re
 import shutil
+from urllib.error import URLError
 from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 TRACKERS = ["udp://tracker.opentrackr.org:1337/announce", "udp://open.stealth.si:80/announce"]
 PIECE_LENGTH = 256 * 1024
@@ -21,6 +23,19 @@ RELEASE_WEBSEED = re.compile(r"^https://github\.com/[A-Za-z0-9](?:[A-Za-z0-9-]{0
 SEED_NODES_EXTENSION = "kmp.seed-nodes"
 SEED_NODE = re.compile(r"^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
     r":(?:6553[0-5]|655[0-2]\d|65[0-4]\d\d|6[0-4]\d{3}|[1-5]\d{4}|[1-9]\d{0,3})$")
+
+
+def webseed_available(url, length):
+    """O upload ao Release é opcional e pode ter falhado: só vai ao catálogo o que responde."""
+    request = Request(url, headers={"Range": "bytes=0-0", "User-Agent": "KMP-catalog-promotion"})
+    try:
+        with urlopen(request, timeout=30) as response:
+            if response.status == 206:
+                total = response.headers.get("Content-Range", "").rpartition("/")[2]
+                return total.isdigit() and int(total) == length
+            return response.status == 200 and response.headers.get("Content-Length") == str(length)
+    except (URLError, OSError, ValueError):
+        return False
 
 
 def seed_nodes(root):
@@ -176,7 +191,8 @@ def main():
             if not package_is_hosted:
                 webseeds = torrent_document.pop(b"url-list", [])
                 if isinstance(webseeds, bytes): webseeds = [webseeds]
-                webseeds = [item for item in webseeds if RELEASE_WEBSEED.match(text(item))]
+                webseeds = [item for item in webseeds if RELEASE_WEBSEED.match(text(item)) and
+                    webseed_available(text(item), variant["package"]["sizeBytes"])]
                 if webseeds: torrent_document[b"url-list"] = webseeds
             matches[0].write_bytes(encode(torrent_document))
             info_hash, magnet, encoded_torrent = torrent_metadata(matches[0])
