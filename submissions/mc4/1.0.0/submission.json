@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "id": "mc4",
+    "name": "Modern Combat 4",
+    "description": "Modern Combat 4: Zero Hour é um jogo de tiro em primeira pessoa de 2012 desenvolvido e publicado pela Gameloft Montreal para celulares, iOS, Android, Windows Phone 8, BlackBerry 10 e BlackBerry PlayBook.",
+    "homepage": "https://ferreiratechlab.web.app",
+    "source": "https://ferreiratechlab.web.app",
+    "license": "Apache 2.0 ",
+    "porter": {
+      "name": "R36SPORTSBR",
+      "url": "https://ferreiratechlab.web.app"
+    },
+    "redistribution": {
+      "allowed": true,
+      "evidence": "https://ferreiratechlab.web.app/licence"
+    }
+  },
+  "submitter": {
+    "name": "R36SPORTSBR",
+    "url": "https://ferreiratechlab.web.app"
+  },
+  "release": {
+    "version": "1.0.0",
+    "revision": 1,
+    "channel": "stable",
+    "publishedAt": "2026-11-08T22:21:41.677Z",
+    "notes": "",
+    "variants": [
+      {
+        "id": "aarch64-portmaster",
+        "priority": 100,
+        "requiredCapabilities": [],
+        "compatibility": {
+          "architectures": [
+            "aarch64"
+          ],
+          "firmwares": {
+            "include": [
+              "darkos",
+              "rocknix",
+              "aurknix"
+            ]
+          }
+        },
+        "requirements": {
+          "readyToRun": true,
+          "minimumRamMB": 128,
+          "analogSticks": 0,
+          "renderers": [],
+          "runtimes": []
+        },
+        "package": {
+          "path": "packages/mc4.zip",
+          "sizeBytes": 1277952843,
+          "sha256": "f08e2f1b462f3832dc6f14772f03002c7885e4199c1ce9ea34a319f627fbb4a1"
+        },
+        "install": {
+          "portId": "mc4",
+          "paths": [
+            "mc4/",
+            "Modern Combat 4.sh"
+          ],
+          "userDataPaths": []
+        },
+        "checks": [
+          "hash",
+          "zip-layout",
+          "launcher",
+          "license"
+        ]
+      }
+    ]
+  }
+}
