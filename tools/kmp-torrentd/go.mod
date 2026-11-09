@@ -88,3 +88,7 @@ require (
 	modernc.org/sqlite v1.21.1 // indirect
 	zombiezen.com/go/sqlite v0.13.1 // indirect
 )
+
+// v1.61.0 com a correção upstream 4bd78e745c (queda ao remover torrent com pedidos a web seeds);
+// ver third_party/anacrolix-torrent/KMP-PATCH.md.
+replace github.com/anacrolix/torrent => ./third_party/anacrolix-torrent
