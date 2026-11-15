@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,7 +29,7 @@ import (
 	"golang.org/x/time/rate"
 )
 
-const version = "0.2.5"
+const version = "0.2.6"
 
 type rpcRequest struct {
 	JSONRPC string            `json:"jsonrpc"`
@@ -86,7 +87,7 @@ type daemon struct {
 
 func main() {
 	var rpcAddr, secret, stateDir, dataDir, uploadLimit, downloadLimit string
-	var listenPort, connsPerTorrent, halfOpenPerTorrent int
+	var listenPort, connsPerTorrent, halfOpenPerTorrent, memoryLimitMiB int
 	flag.StringVar(&rpcAddr, "rpc-listen", "127.0.0.1:26801", "endereço local da API JSON-RPC")
 	flag.StringVar(&secret, "rpc-secret", "", "segredo da API JSON-RPC")
 	flag.StringVar(&stateDir, "state-dir", "./state", "diretório de estado")
@@ -99,7 +100,13 @@ func main() {
 	// rendezvous (BEP 55) peers that are connected to it at the same time.
 	flag.IntVar(&connsPerTorrent, "max-conns-per-torrent", 12, "conexões estabelecidas por torrent")
 	flag.IntVar(&halfOpenPerTorrent, "half-open-per-torrent", 4, "tentativas de conexão simultâneas por torrent")
+	// Teto suave para o heap do Go: o coletor trabalha mais cedo em vez de deixar o processo
+	// crescer num console de 1 GB que também roda a interface.
+	flag.IntVar(&memoryLimitMiB, "memory-limit", 0, "teto suave de memória do Go em MiB (0 = sem teto)")
 	flag.Parse()
+	if memoryLimitMiB > 0 {
+		debug.SetMemoryLimit(int64(memoryLimitMiB) << 20)
+	}
 	if secret == "" {
 		log.Fatal("--rpc-secret é obrigatório")
 	}
@@ -125,7 +132,7 @@ func main() {
 	cfg.EstablishedConnsPerTorrent = connsPerTorrent
 	cfg.HalfOpenConnsPerTorrent = halfOpenPerTorrent
 	cfg.ExtendedHandshakeClientVersion = "KMP torrentd/" + version
-	cfg.DefaultStorage = storage.NewFileOpts(storage.NewFileClientOpts{ClientBaseDir: dataDir})
+	cfg.DefaultStorage = newStorage(dataDir)
 	if n, err := parseRate(uploadLimit); err == nil && n > 0 {
 		cfg.UploadRateLimiter = rate.NewLimiter(rate.Limit(n), max(int(n), 32*1024))
 	}
@@ -322,7 +329,7 @@ func (d *daemon) addMetainfo(raw []byte, opts map[string]string, restoring bool)
 		return "", err
 	}
 	dir := chooseDir(opts["dir"], d.baseDir)
-	spec.Storage = storage.NewFileOpts(storage.NewFileClientOpts{ClientBaseDir: dir})
+	spec.Storage = newStorage(dir)
 	t, _, err := d.client.AddTorrentSpec(spec)
 	if err != nil {
 		return "", err
@@ -336,7 +343,7 @@ func (d *daemon) addMagnet(uri string, opts map[string]string, restoring bool) (
 		return "", fmt.Errorf("magnet inválido: %w", err)
 	}
 	dir := chooseDir(opts["dir"], d.baseDir)
-	spec.Storage = storage.NewFileOpts(storage.NewFileClientOpts{ClientBaseDir: dir})
+	spec.Storage = newStorage(dir)
 	t, _, err := d.client.AddTorrentSpec(spec)
 	if err != nil {
 		return "", err
@@ -664,6 +671,13 @@ func (d *daemon) restore() error {
 		return errors.New(strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+// Leitura e escrita comuns em vez de mapear os arquivos em memória: os mapeamentos nunca são
+// liberados, as páginas lidas ao semear se acumulam no processo, e um arquivo trocado pelo
+// instalador ou num cartão removido derrubaria o daemon com SIGBUS.
+func newStorage(dir string) storage.ClientImplCloser {
+	return storage.NewFileOpts(storage.NewFileClientOpts{ClientBaseDir: dir, DisableMmap: true})
 }
 
 func chooseDir(v, fallback string) string {
