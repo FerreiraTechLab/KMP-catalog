@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "id": "gow-collection-vita",
+    "name": "God of War Collection",
+    "description": "A God of War Collection é uma coletânea remasterizada que reúne os dois primeiros jogos da franquia — God of War e God of War II (lançados originalmente para o PlayStation 2) — em alta definição (720p a 60 quadros por segundo) ",
+    "homepage": "https://ferreiratechlaboficial.web.app/",
+    "source": "https://ferreiratechlaboficial.web.app/",
+    "license": "Apache 2.0",
+    "porter": {
+      "name": "Next-OS",
+      "url": "https://ferreiratechlaboficial.web.app/"
+    },
+    "redistribution": {
+      "allowed": true,
+      "evidence": "https://ferreiratechlaboficial.web.app/"
+    }
+  },
+  "submitter": {
+    "name": "Next-OS",
+    "url": "https://ferreiratechlaboficial.web.app/"
+  },
+  "release": {
+    "version": "1.3.9",
+    "revision": 1,
+    "channel": "stable",
+    "publishedAt": "2026-11-15T21:09:51.035Z",
+    "notes": "",
+    "variants": [
+      {
+        "id": "aarch64-portmaster",
+        "priority": 100,
+        "requiredCapabilities": [],
+        "compatibility": {
+          "architectures": [
+            "aarch64"
+          ],
+          "firmwares": {
+            "include": [
+              "darkos",
+              "rocknix",
+              "aurknix"
+            ]
+          }
+        },
+        "requirements": {
+          "readyToRun": true,
+          "minimumRamMB": 128,
+          "analogSticks": 0,
+          "renderers": [],
+          "runtimes": []
+        },
+        "package": {
+          "path": "packages/gow-collection-vita.zip",
+          "sizeBytes": 3174732658,
+          "sha256": "92c748a0584f75c439554187f7a513507f0a77389c1c58ad07403e1412c4dbc7"
+        },
+        "install": {
+          "portId": "gow-collection-vita",
+          "paths": [
+            "God of War Collection.sh",
+            "gow-collection-vita/"
+          ],
+          "userDataPaths": []
+        },
+        "checks": [
+          "hash",
+          "zip-layout",
+          "launcher",
+          "license"
+        ]
+      }
+    ]
+  }
+}
