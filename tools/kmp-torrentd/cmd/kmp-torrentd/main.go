@@ -29,7 +29,7 @@ import (
 	"golang.org/x/time/rate"
 )
 
-const version = "0.2.6"
+const version = "0.2.7"
 
 type rpcRequest struct {
 	JSONRPC string            `json:"jsonrpc"`

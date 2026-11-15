@@ -1,4 +1,4 @@
-# anacrolix/torrent v1.61.0 com dois remendos
+# anacrolix/torrent v1.61.0 com três remendos
 
 Cópia da v1.61.0 (sem testes, `cmd/` e `fs/`) usada pelo `kmp-torrentd` via `replace` no `go.mod`.
 
@@ -13,5 +13,10 @@ Ambos são commits upstream que ainda não saíram em versão:
    padrão mapeia todos os arquivos em memória e nunca os libera: num console com 1 GB de RAM que
    semeia vários GB, as páginas lidas se acumulam no processo, e um arquivo trocado por fora derruba
    o daemon com SIGBUS.
+
+3. `storage/file-io-classic.go`, em `classicFileReader.writeToN`, deixa de devolver `io.ErrShortWrite`
+   quando o limite de leitura da peça foi atingido. É o d38ace8dd6 ("Don't report the hashing read's
+   length limit as a short write", #1132). Sem ele, com o DisableMmap, cada peça verificada gera um
+   aviso "short write" no log e a biblioteca pula o smart ban, embora o hash esteja correto.
 
 Remova esta pasta e o `replace` quando sair uma versão com essas correções.
