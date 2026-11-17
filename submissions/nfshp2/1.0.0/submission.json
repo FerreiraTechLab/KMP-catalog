@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "id": "nfshp2",
+    "name": "NFS Hot Pursuit 2",
+    "description": "Need for Speed: Hot Pursuit 2 é um jogo eletrônico de corrida de 2002. É a sexta edição da série Need for Speed ​​e a sequência de Need for Speed III: Hot Pursuit de 1998. Foi desenvolvido pela EA Black Box para PlayStation 2 ",
+    "homepage": "https://ferreiratechlaboficial.web.app/",
+    "source": "https://ferreiratechlaboficial.web.app/",
+    "license": "Apache 2.0 ",
+    "porter": {
+      "name": "FerreiraTechLab",
+      "url": "https://ferreiratechlaboficial.web.app/"
+    },
+    "redistribution": {
+      "allowed": true,
+      "evidence": "https://ferreiratechlaboficial.web.app/"
+    }
+  },
+  "submitter": {
+    "name": "FerreiraTechLab",
+    "url": "https://ferreiratechlaboficial.web.app/"
+  },
+  "release": {
+    "version": "1.0.0",
+    "revision": 1,
+    "channel": "stable",
+    "publishedAt": "2026-11-17T22:30:13.668Z",
+    "notes": "",
+    "variants": [
+      {
+        "id": "aarch64-portmaster",
+        "priority": 100,
+        "requiredCapabilities": [],
+        "compatibility": {
+          "architectures": [
+            "aarch64"
+          ],
+          "firmwares": {
+            "include": [
+              "darkos",
+              "rocknix",
+              "aurknix"
+            ]
+          }
+        },
+        "requirements": {
+          "readyToRun": true,
+          "minimumRamMB": 128,
+          "analogSticks": 0,
+          "renderers": [],
+          "runtimes": []
+        },
+        "package": {
+          "path": "packages/nfshp2.zip",
+          "sizeBytes": 2241527361,
+          "sha256": "106b6b6407c3bf44247126da7ba31e59583b6bdaddce46a42824e868a9f38d8f"
+        },
+        "install": {
+          "portId": "nfshp2",
+          "paths": [
+            "nfshp2/",
+            "NFSHP2.sh"
+          ],
+          "userDataPaths": []
+        },
+        "checks": [
+          "hash",
+          "zip-layout",
+          "launcher",
+          "license"
+        ]
+      }
+    ]
+  }
+}
