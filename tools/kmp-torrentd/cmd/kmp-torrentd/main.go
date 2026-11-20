@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -29,7 +30,7 @@ import (
 	"golang.org/x/time/rate"
 )
 
-const version = "0.2.7"
+const version = "0.2.8"
 
 type rpcRequest struct {
 	JSONRPC string            `json:"jsonrpc"`
@@ -83,11 +84,13 @@ type daemon struct {
 	items                 map[string]*transfer
 	byHash                map[string]string
 	shutdown              context.CancelFunc
+	lpd                   atomic.Pointer[localDiscovery]
 }
 
 func main() {
 	var rpcAddr, secret, stateDir, dataDir, uploadLimit, downloadLimit string
 	var listenPort, connsPerTorrent, halfOpenPerTorrent, memoryLimitMiB int
+	var localDiscovery bool
 	flag.StringVar(&rpcAddr, "rpc-listen", "127.0.0.1:26801", "endereço local da API JSON-RPC")
 	flag.StringVar(&secret, "rpc-secret", "", "segredo da API JSON-RPC")
 	flag.StringVar(&stateDir, "state-dir", "./state", "diretório de estado")
@@ -103,6 +106,7 @@ func main() {
 	// Teto suave para o heap do Go: o coletor trabalha mais cedo em vez de deixar o processo
 	// crescer num console de 1 GB que também roda a interface.
 	flag.IntVar(&memoryLimitMiB, "memory-limit", 0, "teto suave de memória do Go em MiB (0 = sem teto)")
+	flag.BoolVar(&localDiscovery, "local-discovery", true, "descobre peers da rede local por multicast (BEP 14)")
 	flag.Parse()
 	if memoryLimitMiB > 0 {
 		debug.SetMemoryLimit(int64(memoryLimitMiB) << 20)
@@ -151,6 +155,9 @@ func main() {
 		log.Printf("restauração parcial: %v", err)
 	}
 	go d.sampleRates(ctx)
+	if localDiscovery {
+		go d.runLocalDiscovery(ctx, client.LocalPort())
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/jsonrpc", d.serveRPC)
@@ -279,7 +286,7 @@ func (d *daemon) call(method string, p []json.RawMessage) (any, error) {
 	case "aria2.getGlobalStat":
 		return d.globalStat(), nil
 	case "aria2.getVersion":
-		return map[string]any{"version": "kmp-torrentd " + version, "enabledFeatures": []string{"BitTorrent", "DHT", "IPv6", "PEX", "uTP", "BEP55", "AddPeers"}}, nil
+		return map[string]any{"version": "kmp-torrentd " + version, "enabledFeatures": []string{"BitTorrent", "DHT", "IPv6", "PEX", "uTP", "BEP55", "LPD", "AddPeers"}}, nil
 	case "kmp.getNetworkStats":
 		return d.networkStats(), nil
 	case "kmp.addPeers":
@@ -363,6 +370,9 @@ func (d *daemon) register(t *torrent.Torrent, dir, magnet string, raw []byte, re
 	x := &transfer{GID: gid, Dir: dir, Magnet: magnet, Metainfo: raw, Torrent: t, AddedAt: time.Now(), lastAt: time.Now()}
 	d.items[gid], d.byHash[hash] = x, gid
 	d.mu.Unlock()
+	if ld := d.lpd.Load(); ld != nil {
+		ld.added(hash, x)
+	}
 	if t.Info() != nil {
 		t.DownloadAll()
 	} else {
