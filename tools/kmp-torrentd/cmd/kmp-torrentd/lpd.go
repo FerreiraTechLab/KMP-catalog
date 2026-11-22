@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,6 +36,10 @@ const (
 	lpdRemember           = 10 * time.Minute
 	lpdRememberMax        = 4096
 	lpdMaxPacket          = 1400
+	// Depois de uma falha ao abrir os sockets, espera este tempo antes de tentar de novo.
+	// Na troca de Wi-Fi, a abertura costuma falhar no instante sem rede ("no such
+	// device"); com um minuto, o console ficava esse tempo sem descoberta local.
+	lpdRetry = lpdTick
 
 	peerSourceLocal torrent.PeerSource = "Lpd"
 )
@@ -47,6 +52,25 @@ type localDiscovery struct {
 	mu        sync.Mutex
 	announced map[string]time.Time
 	seen      map[string]map[string]time.Time
+	// network devolve uma assinatura dos endereços IPv4 locais; trocável nos testes.
+	network func() string
+}
+
+// lpdNetwork resume os IPv4 locais (sem loopback). Quando o console troca de rede, por
+// exemplo do Wi-Fi de casa para o roteador do celular, a assinatura muda.
+func lpdNetwork() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	var ips []string
+	for _, addr := range addrs {
+		if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.To4() != nil && !ipnet.IP.IsLoopback() {
+			ips = append(ips, ipnet.String())
+		}
+	}
+	sort.Strings(ips)
+	return strings.Join(ips, ",")
 }
 
 // lpdMessages monta os anúncios, vários infohashes por pacote sem passar de 1400 bytes.
@@ -109,44 +133,84 @@ func (d *daemon) runLocalDiscovery(ctx context.Context, port int) {
 		log.Printf("descoberta local indisponível: %v", err)
 		return
 	}
-	listener, err := net.ListenMulticastUDP("udp4", nil, group)
-	if err != nil {
-		log.Printf("descoberta local indisponível: %v", err)
-		return
-	}
-	sender, err := net.DialUDP("udp4", nil, group)
-	if err != nil {
-		listener.Close()
-		log.Printf("descoberta local indisponível: %v", err)
-		return
-	}
 	token := make([]byte, 8)
 	_, _ = rand.Read(token)
 	ld := &localDiscovery{d: d, port: port, cookie: hex.EncodeToString(token), wake: make(chan struct{}, 1),
-		announced: map[string]time.Time{}, seen: map[string]map[string]time.Time{}}
+		announced: map[string]time.Time{}, seen: map[string]map[string]time.Time{}, network: lpdNetwork}
 	d.lpd.Store(ld)
-	go func() {
-		<-ctx.Done()
+	lastError := ""
+	for ctx.Err() == nil {
+		network := ld.network()
+		listener, sender, err := openLPD(group)
+		if err != nil {
+			// Sem rede, o erro se repete a cada tentativa; registra só quando muda.
+			if err.Error() != lastError {
+				log.Printf("descoberta local indisponível: %v", err)
+				lastError = err.Error()
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(lpdRetry):
+			}
+			continue
+		}
+		lastError = ""
+		reason := ld.serve(ctx, listener, sender, group, network)
 		listener.Close()
 		sender.Close()
-	}()
+		if ctx.Err() == nil {
+			log.Printf("descoberta local: %s; reabrindo", reason)
+		}
+	}
+}
+
+// openLPD abre o socket que escuta o grupo multicast e um socket de envio não conectado:
+// com DialUDP, o endereço de origem ficava preso ao da rede em que o daemon iniciou, e
+// depois de trocar de rede todo anúncio falhava com "invalid argument".
+func openLPD(group *net.UDPAddr) (*net.UDPConn, *net.UDPConn, error) {
+	listener, err := net.ListenMulticastUDP("udp4", nil, group)
+	if err != nil {
+		return nil, nil, err
+	}
+	sender, err := net.ListenUDP("udp4", &net.UDPAddr{})
+	if err != nil {
+		listener.Close()
+		return nil, nil, err
+	}
+	return listener, sender, nil
+}
+
+// serve anuncia e recebe até o daemon encerrar, um envio falhar ou a rede local mudar.
+// Na volta, os sockets são reabertos e todos os torrents são anunciados de novo, para os
+// consoles da rede nova os conhecerem na hora.
+func (ld *localDiscovery) serve(ctx context.Context, listener, sender *net.UDPConn, group *net.UDPAddr,
+	network string) string {
+	ld.mu.Lock()
+	ld.announced = map[string]time.Time{}
+	ld.mu.Unlock()
 	go ld.receive(listener)
 	ticker := time.NewTicker(lpdTick)
 	defer ticker.Stop()
 	for {
-		ld.announce(sender, time.Now())
+		if err := ld.announce(sender, group, time.Now()); err != nil {
+			return fmt.Sprintf("falha ao anunciar (%v)", err)
+		}
 		select {
 		case <-ctx.Done():
-			return
+			return "encerrando"
 		case <-ticker.C:
 		case <-ld.wake:
+		}
+		if current := ld.network(); current != network {
+			return fmt.Sprintf("rede local mudou de %q para %q", network, current)
 		}
 	}
 }
 
 // announce envia os torrents ativos cujo intervalo venceu. Torrents pausados (por
 // bateria, por exemplo) ficam de fora, porque não enviam dados.
-func (ld *localDiscovery) announce(sender *net.UDPConn, now time.Time) {
+func (ld *localDiscovery) announce(sender *net.UDPConn, group *net.UDPAddr, now time.Time) error {
 	ld.d.mu.RLock()
 	var due []string
 	ld.mu.Lock()
@@ -164,11 +228,17 @@ func (ld *localDiscovery) announce(sender *net.UDPConn, now time.Time) {
 	ld.mu.Unlock()
 	ld.d.mu.RUnlock()
 	for _, packet := range lpdMessages(ld.port, ld.cookie, due) {
-		if _, err := sender.Write(packet); err != nil {
-			log.Printf("descoberta local: falha ao anunciar: %v", err)
-			return
+		if _, err := sender.WriteToUDP(packet, group); err != nil {
+			// Os que não saíram voltam a vencer, e a próxima abertura anuncia todos.
+			ld.mu.Lock()
+			for _, hash := range due {
+				delete(ld.announced, hash)
+			}
+			ld.mu.Unlock()
+			return err
 		}
 	}
+	return nil
 }
 
 func (ld *localDiscovery) receive(listener *net.UDPConn) {

@@ -30,7 +30,7 @@ import (
 	"golang.org/x/time/rate"
 )
 
-const version = "0.2.8"
+const version = "0.2.9"
 
 type rpcRequest struct {
 	JSONRPC string            `json:"jsonrpc"`
@@ -76,15 +76,16 @@ type transfer struct {
 }
 
 type daemon struct {
-	client                *torrent.Client
-	secret                string
-	stateDir              string
-	baseDir               string
-	mu                    sync.RWMutex
-	items                 map[string]*transfer
-	byHash                map[string]string
-	shutdown              context.CancelFunc
-	lpd                   atomic.Pointer[localDiscovery]
+	client   *torrent.Client
+	secret   string
+	stateDir string
+	baseDir  string
+	mu       sync.RWMutex
+	items    map[string]*transfer
+	byHash   map[string]string
+	shutdown context.CancelFunc
+	lpd      atomic.Pointer[localDiscovery]
+	totals   *peerTotals
 }
 
 func main() {
@@ -143,6 +144,8 @@ func main() {
 	if n, err := parseRate(downloadLimit); err == nil && n > 0 {
 		cfg.DownloadRateLimiter = rate.NewLimiter(rate.Limit(n), max(int(n), 1024*1024))
 	}
+	totals := newPeerTotals()
+	cfg.Callbacks.PeerConnClosed = totals.connClosed
 	client, err := torrent.NewClient(cfg)
 	if err != nil {
 		log.Fatal(err)
@@ -150,7 +153,7 @@ func main() {
 	defer client.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	d := &daemon{client: client, secret: secret, stateDir: stateDir, baseDir: dataDir,
-		items: map[string]*transfer{}, byHash: map[string]string{}, shutdown: cancel}
+		items: map[string]*transfer{}, byHash: map[string]string{}, shutdown: cancel, totals: totals}
 	if err := d.restore(); err != nil {
 		log.Printf("restauração parcial: %v", err)
 	}
@@ -286,9 +289,19 @@ func (d *daemon) call(method string, p []json.RawMessage) (any, error) {
 	case "aria2.getGlobalStat":
 		return d.globalStat(), nil
 	case "aria2.getVersion":
-		return map[string]any{"version": "kmp-torrentd " + version, "enabledFeatures": []string{"BitTorrent", "DHT", "IPv6", "PEX", "uTP", "BEP55", "LPD", "AddPeers"}}, nil
+		return map[string]any{"version": "kmp-torrentd " + version, "enabledFeatures": []string{"BitTorrent", "DHT", "IPv6", "PEX", "uTP", "BEP55", "LPD", "AddPeers", "PeerTotals"}}, nil
 	case "kmp.getNetworkStats":
 		return d.networkStats(), nil
+	case "kmp.getPeerTotals":
+		gid, err := stringAt(p, 0)
+		if err != nil {
+			return nil, err
+		}
+		x := d.get(gid)
+		if x == nil {
+			return nil, errors.New("GID não encontrado")
+		}
+		return d.totals.report(strings.ToLower(x.Torrent.InfoHash().HexString()), x.Torrent.PeerConns()), nil
 	case "kmp.addPeers":
 		gid, err := stringAt(p, 0)
 		if err != nil {
@@ -420,7 +433,7 @@ func (d *daemon) statusOf(x *transfer) map[string]any {
 		"dir":             x.Dir,
 		"completedLength": strconv.FormatInt(done, 10), "downloadSpeed": strconv.FormatInt(downRate, 10),
 		"downloadLength": strconv.FormatInt(st.BytesReadUsefulData.Int64(), 10),
-		"uploadSpeed": strconv.FormatInt(upRate, 10), "uploadLength": strconv.FormatInt(st.BytesWrittenData.Int64(), 10),
+		"uploadSpeed":    strconv.FormatInt(upRate, 10), "uploadLength": strconv.FormatInt(st.BytesWrittenData.Int64(), 10),
 		"infoHash": strings.ToLower(t.InfoHash().HexString()), "seeder": strconv.FormatBool(finished),
 		"numSeeders": strconv.Itoa(st.ConnectedSeeders), "connections": strconv.Itoa(st.ActivePeers), "files": files,
 	}
@@ -489,6 +502,7 @@ func (d *daemon) remove(gid string) error {
 	delete(d.byHash, strings.ToLower(x.Torrent.InfoHash().HexString()))
 	d.mu.Unlock()
 	x.Torrent.Drop()
+	d.totals.forget(strings.ToLower(x.Torrent.InfoHash().HexString()))
 	return d.persist()
 }
 
@@ -504,8 +518,15 @@ func (d *daemon) peers(gid string) ([]map[string]any, error) {
 			addr = p.RemoteAddr.String()
 		}
 		host, port, _ := net.SplitHostPort(addr)
+		stats := p.Stats()
+		// Campos com nome do aria2 (downloadSpeed, uploadSpeed) e extras do KMP para diagnóstico:
+		// transporte e família do IP (tcp4, udp6…) e bytes de dados trocados nesta conexão.
 		ret = append(ret, map[string]any{"peerId": hex.EncodeToString(p.PeerID[:]), "ip": host,
-			"port": port, "source": string(p.Discovery)})
+			"port": port, "source": string(p.Discovery), "network": p.Network,
+			"downloadSpeed":   strconv.FormatInt(int64(stats.DownloadRate), 10),
+			"uploadSpeed":     strconv.FormatInt(int64(stats.LastWriteUploadRate), 10),
+			"downloadedBytes": strconv.FormatInt(stats.BytesReadUsefulData.Int64(), 10),
+			"uploadedBytes":   strconv.FormatInt(stats.BytesWrittenData.Int64(), 10)})
 	}
 	return ret, nil
 }
@@ -588,7 +609,7 @@ func (d *daemon) networkStats() map[string]any {
 		"dialableOnlyAfterHolepunch":      stats.NumPeersDialableOnlyAfterHolepunch,
 		"successfulAfterHolepunchConnect": stats.NumPeersDialedSuccessfullyAfterHolepunchConnect,
 		"probablyConnectedByHolepunch":    stats.NumPeersProbablyOnlyConnectedDueToHolepunch,
-		"peerDiscovery":                    []string{"trackers", "DHT", "PEX", "LPD"},
+		"peerDiscovery":                   []string{"trackers", "DHT", "PEX", "LPD"},
 		"torrents":                        torrents,
 	}
 }

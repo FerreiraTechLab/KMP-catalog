@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
+	"net"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLocalDiscoveryMessageRoundTrip(t *testing.T) {
@@ -52,5 +55,53 @@ func TestLocalDiscoveryRejectsOtherMessages(t *testing.T) {
 	port, hashes, _, ok := parseLPD([]byte("BT-SEARCH * HTTP/1.1\r\nhost: x\r\nPORT: 51413\r\ninfohash: " + strings.Repeat("F", 40) + "\r\n\r\n"))
 	if !ok || port != 51413 || hashes[0] != strings.Repeat("f", 40) {
 		t.Fatalf("anúncio de outro cliente lido errado: %v %v %v", port, hashes, ok)
+	}
+}
+
+// Quando o console troca de rede, serve devolve o motivo para os sockets serem reabertos
+// e esquece os anúncios já feitos, para todos os torrents saírem de novo na rede nova.
+func TestLPDServeReabreQuandoARedeMuda(t *testing.T) {
+	listener, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	sender, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sender.Close()
+	networks := []string{"192.168.0.98/24", "10.243.229.184/24"}
+	calls := 0
+	ld := &localDiscovery{d: &daemon{items: map[string]*transfer{}, byHash: map[string]string{}},
+		port: 6881, cookie: "teste", wake: make(chan struct{}, 1),
+		announced: map[string]time.Time{"aa": time.Now()}, seen: map[string]map[string]time.Time{},
+		network: func() string {
+			calls++
+			return networks[1]
+		}}
+	ld.wake <- struct{}{}
+	done := make(chan string, 1)
+	go func() {
+		done <- ld.serve(context.Background(), listener, sender, listener.LocalAddr().(*net.UDPAddr), networks[0])
+	}()
+	select {
+	case reason := <-done:
+		if !strings.Contains(reason, "rede local mudou") || !strings.Contains(reason, networks[1]) {
+			t.Fatalf("motivo inesperado: %q", reason)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("serve não percebeu a troca de rede")
+	}
+	ld.mu.Lock()
+	defer ld.mu.Unlock()
+	if len(ld.announced) != 0 {
+		t.Fatalf("os anúncios anteriores deviam ser esquecidos: %v", ld.announced)
+	}
+}
+
+func TestLPDNetworkIgnoraLoopback(t *testing.T) {
+	if strings.Contains(lpdNetwork(), "127.0.0.1") {
+		t.Fatal("a assinatura da rede não deve incluir o loopback")
 	}
 }
